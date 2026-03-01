@@ -4,7 +4,7 @@
 
 CANN代码量大（如HCCL+HCOMM），团队新人多，传统静态分析工具（cppcheck、clang-tidy）能覆盖的问题类型有限。本工具通过Claude Code配合自定义的[codereview skill](skill/codereview)，在审查PR diff时同时读取上下文代码（不只看diff本身），并将检视意见发布为GitCode PR评论。
 
-维护者：@tsukiyokai
+维护者：@tsukiyokai <br>
 Slack：[#ai-code-review](https://claude-rfj1883.slack.com/archives/C0AHLUT5E0M)
 
 ## 工作流程
