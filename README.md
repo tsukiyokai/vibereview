@@ -1,11 +1,11 @@
-# AI Code Review
+# Vibe Review
 
 [CANN](https://gitcode.com/cann)代码仓（GitCode平台）的自动化检视机器人。
 
 CANN代码量大（如HCCL+HCOMM），团队新人多，传统静态分析工具（cppcheck、clang-tidy）能覆盖的问题类型有限。本工具通过Claude Code配合自定义的[codereview skill](skill/codereview)，在审查PR diff时同时读取上下文代码（不只看diff本身），并将检视意见发布为GitCode PR评论。
 
 维护者：@tsukiyokai <br>
-Slack：[#ai-code-review](https://claude-rfj1883.slack.com/archives/C0AHLUT5E0M)
+Slack：[#vibereview](https://claude-rfj1883.slack.com/archives/C0AHLUT5E0M)
 
 ## 工作流程
 
@@ -33,8 +33,8 @@ Slack：[#ai-code-review](https://claude-rfj1883.slack.com/archives/C0AHLUT5E0M)
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/tsukiyokai/ai_code_review.git
-cd ai_code_review
+git clone https://github.com/tsukiyokai/vibereview.git
+cd vibereview
 
 # 2. 安装codereview skill（软链接到Claude Code的skills目录）
 mkdir -p ~/.claude/skills

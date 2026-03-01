@@ -5,56 +5,56 @@
   支持跨仓库审查：通过 --repo 参数指定目标仓库（默认 hcomm-dev）。
   --repo 同时决定本地仓库路径（脚本所在 jbs 目录的同级目录）和 GitCode API 目标。
 
-  PR 审查结果保存到 ai_code_review/log/{owner}/{repo}/by_pr/ 目录。
-  本地文件审查结果保存到 ai_code_review/log/{owner}/{repo}/by_file/ 目录。
+  PR 审查结果保存到 vibereview/log/{owner}/{repo}/by_pr/ 目录。
+  本地文件审查结果保存到 vibereview/log/{owner}/{repo}/by_file/ 目录。
 
 用法:
   1. 设置 GitCode 个人访问令牌 (PR 审查需要):
      export GITCODE_TOKEN=your_personal_access_token
 
   2. 审查最近 N 个 open PR (默认 3，默认仓库 hcomm-dev):
-     python3 jbs/ai_code_review/ai_reviewer.py
-     python3 jbs/ai_code_review/ai_reviewer.py --count 5
+     python3 jbs/vibereview/ai_reviewer.py
+     python3 jbs/vibereview/ai_reviewer.py --count 5
 
   3. 审查指定 PR:
-     python3 jbs/ai_code_review/ai_reviewer.py --pr 1150
-     python3 jbs/ai_code_review/ai_reviewer.py --pr 1150 1144 1143
+     python3 jbs/vibereview/ai_reviewer.py --pr 1150
+     python3 jbs/vibereview/ai_reviewer.py --pr 1150 1144 1143
 
   4. 跨仓库审查（--repo 指定目标仓库）:
-     python3 jbs/ai_code_review/ai_reviewer.py --repo hcomm --pr 100
-     python3 jbs/ai_code_review/ai_reviewer.py --repo hcomm-dev --count 3
-     python3 jbs/ai_code_review/ai_reviewer.py --repo hcomm --file src/xxx.cpp
+     python3 jbs/vibereview/ai_reviewer.py --repo hcomm --pr 100
+     python3 jbs/vibereview/ai_reviewer.py --repo hcomm-dev --count 3
+     python3 jbs/vibereview/ai_reviewer.py --repo hcomm --file src/xxx.cpp
 
   5. 审查指定用户的 open PR:
-     python3 jbs/ai_code_review/ai_reviewer.py --author lilin_137           # 最近 3 个
-     python3 jbs/ai_code_review/ai_reviewer.py --author lilin_137 -n 0      # 全部
+     python3 jbs/vibereview/ai_reviewer.py --author lilin_137           # 最近 3 个
+     python3 jbs/vibereview/ai_reviewer.py --author lilin_137 -n 0      # 全部
 
   6. 审查并保存到本地:
-     python3 jbs/ai_code_review/ai_reviewer.py --pr 1150 --save
+     python3 jbs/vibereview/ai_reviewer.py --pr 1150 --save
 
   7. 审查并发布评论到 GitCode PR:
-     python3 jbs/ai_code_review/ai_reviewer.py --pr 1150 --comment
+     python3 jbs/vibereview/ai_reviewer.py --pr 1150 --comment
 
   8. 审查已合并的 PR:
-     python3 jbs/ai_code_review/ai_reviewer.py --state merged --count 3
+     python3 jbs/vibereview/ai_reviewer.py --state merged --count 3
 
   9. 审查本地文件:
-     python3 jbs/ai_code_review/ai_reviewer.py --file src/xxx.cpp
-     python3 jbs/ai_code_review/ai_reviewer.py --file src/a.cpp src/b.h --save
+     python3 jbs/vibereview/ai_reviewer.py --file src/xxx.cpp
+     python3 jbs/vibereview/ai_reviewer.py --file src/a.cpp src/b.h --save
 
  10. 强制重新审查 (忽略已审查过最新提交的判断):
-     python3 jbs/ai_code_review/ai_reviewer.py --pr 1150 --comment --force
+     python3 jbs/vibereview/ai_reviewer.py --pr 1150 --comment --force
 
  11. 查看审查采纳率统计:
-     python3 jbs/ai_code_review/ai_reviewer.py --stats
-     python3 jbs/ai_code_review/ai_reviewer.py --stats --days 90
+     python3 jbs/vibereview/ai_reviewer.py --stats
+     python3 jbs/vibereview/ai_reviewer.py --stats --days 90
 
  12. 手动追踪审查结果:
-     python3 jbs/ai_code_review/ai_reviewer.py --track
-     python3 jbs/ai_code_review/ai_reviewer.py --track --pr 1150
+     python3 jbs/vibereview/ai_reviewer.py --track
+     python3 jbs/vibereview/ai_reviewer.py --track --pr 1150
 
  13. 导入历史审查数据:
-     python3 jbs/ai_code_review/ai_reviewer.py --import-logs
+     python3 jbs/vibereview/ai_reviewer.py --import-logs
 
   选项可组合：--author 筛选用户, --count 限制数量, --state 筛选状态, --dry-run 只拉取不审查。
   --repo 默认 hcomm-dev，对应本地 ~/repo/hcomm-dev/ 和 GitCode cann/hcomm-dev。

@@ -55,9 +55,9 @@ Skill 在一定程度上改善了检视意见的质量问题，但完整workflow
 
 ```bash
 # 检视指定PR（支持复数）
-python3 ai_code_review/ai_reviewer.py --pr 1082 --comment
+python3 vibereview/ai_reviewer.py --pr 1082 --comment
 # 检视指定作者的所有PR
-python3 ai_code_review/ai_reviewer.py --author xumochi --count 0
+python3 vibereview/ai_reviewer.py --author xumochi --count 0
 ```
 
 看起来简单但其实麻烦的事不少，besides 这部分是非常具体的踩坑环节，只想看 cc 效果的人可以先略过，想在黄区自动化 codehub 工作流的人可以参考后面的，有一个单独的小节对脚本的开发进行介绍。
@@ -717,38 +717,38 @@ export GITCODE_TOKEN=your_personal_access_token
 
 ```bash
 # ── PR 审查 ──
-python3 ai_code_review/ai_reviewer.py                              # 最近 3 个 open PR
-python3 ai_code_review/ai_reviewer.py --count 5                    # 最近 5 个 open PR
-python3 ai_code_review/ai_reviewer.py --pr 1150                    # 指定 PR
-python3 ai_code_review/ai_reviewer.py --pr 1150 1144 1143          # 多个 PR（自动并行）
-python3 ai_code_review/ai_reviewer.py --pr 1150 1144 -j1           # 多个 PR（强制顺序）
-python3 ai_code_review/ai_reviewer.py --author lilin_137           # 某用户最近 3 个 open PR
-python3 ai_code_review/ai_reviewer.py --author lilin_137 -n 0      # 某用户全部 open PR
-python3 ai_code_review/ai_reviewer.py --state merged --count 3     # 最近 3 个已合并 PR
-python3 ai_code_review/ai_reviewer.py --pr 1150 --comment          # 审查并发布评论
-python3 ai_code_review/ai_reviewer.py --pr 1150 --comment --inline # 审查 + 行内评论
-python3 ai_code_review/ai_reviewer.py --pr 1150 --save             # 审查并保存本地
-python3 ai_code_review/ai_reviewer.py --pr 1150 --dry-run          # 只拉取 diff
+python3 vibereview/ai_reviewer.py                              # 最近 3 个 open PR
+python3 vibereview/ai_reviewer.py --count 5                    # 最近 5 个 open PR
+python3 vibereview/ai_reviewer.py --pr 1150                    # 指定 PR
+python3 vibereview/ai_reviewer.py --pr 1150 1144 1143          # 多个 PR（自动并行）
+python3 vibereview/ai_reviewer.py --pr 1150 1144 -j1           # 多个 PR（强制顺序）
+python3 vibereview/ai_reviewer.py --author lilin_137           # 某用户最近 3 个 open PR
+python3 vibereview/ai_reviewer.py --author lilin_137 -n 0      # 某用户全部 open PR
+python3 vibereview/ai_reviewer.py --state merged --count 3     # 最近 3 个已合并 PR
+python3 vibereview/ai_reviewer.py --pr 1150 --comment          # 审查并发布评论
+python3 vibereview/ai_reviewer.py --pr 1150 --comment --inline # 审查 + 行内评论
+python3 vibereview/ai_reviewer.py --pr 1150 --save             # 审查并保存本地
+python3 vibereview/ai_reviewer.py --pr 1150 --dry-run          # 只拉取 diff
 
 # ── 本地文件审查（不需要令牌） ──
-python3 ai_code_review/ai_reviewer.py --file src/xxx.cpp
-python3 ai_code_review/ai_reviewer.py --file src/a.cpp src/b.h --save
-python3 ai_code_review/ai_reviewer.py --file src/platform/resource/     # 目录递归
+python3 vibereview/ai_reviewer.py --file src/xxx.cpp
+python3 vibereview/ai_reviewer.py --file src/a.cpp src/b.h --save
+python3 vibereview/ai_reviewer.py --file src/platform/resource/     # 目录递归
 
 # ── 目录跨文件审查（不需要令牌） ──
-python3 ai_code_review/ai_reviewer.py --dir src/framework/communicator/zero_copy/
+python3 vibereview/ai_reviewer.py --dir src/framework/communicator/zero_copy/
 
 # ── 清理 ──
-python3 ai_code_review/ai_reviewer.py --clean 1150 1144            # 清除 AI 评论
+python3 vibereview/ai_reviewer.py --clean 1150 1144            # 清除 AI 评论
 ```
 
 #### 输出路径
 
 | 模式 | 输出目录 |
 |------|---------|
-| PR 审查 | `ai_code_review/log/by_pr/pr_{number}_review.md` |
-| 文件审查 | `ai_code_review/log/by_file/{filename}_review.md` |
-| 目录审查 | `ai_code_review/log/by_dir/{dirname}_review.md` |
+| PR 审查 | `vibereview/log/by_pr/pr_{number}_review.md` |
+| 文件审查 | `vibereview/log/by_file/{filename}_review.md` |
+| 目录审查 | `vibereview/log/by_dir/{dirname}_review.md` |
 
 默认审查结果输出到终端；`--save` 追加本地文件保存；`--comment` 追加发布到 PR 评论。三种输出互不排斥，可组合使用。
 
