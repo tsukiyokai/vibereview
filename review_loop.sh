@@ -5,6 +5,13 @@
 
 set -euo pipefail
 
+# 同时输出到终端和日志文件
+LOG_DIR="$(cd "$(dirname "$0")" && pwd)/log/run"
+mkdir -p "$LOG_DIR"
+LOG_FILE="$LOG_DIR/review_loop_$(date +%Y%m%d_%H%M%S).log"
+exec > >(tee -a "$LOG_FILE") 2>&1
+echo "日志文件：$LOG_FILE"
+
 OWNER="cann"
 TOKEN="${1:?用法: $0 <TOKEN> [INTERVAL] [REPO]}"
 INTERVAL="${2:-60}"

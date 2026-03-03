@@ -2106,74 +2106,6 @@ def _track_outcomes(
     return updated
 
 
-def _build_comparison_section(
-    conn: sqlite3.Connection, repo_name: str,
-    pr_number: int, current_head_sha: str,
-) -> str:
-    """构建与上轮审查的对比摘要。首次审查返回空字符串。"""
-    prev = conn.execute(
-        """SELECT id, review_round, head_sha, review_timestamp
-           FROM reviews
-           WHERE pr_number=? AND repo=? AND head_sha!=?
-           ORDER BY review_round DESC LIMIT 1""",
-        (pr_number, repo_name, current_head_sha),
-    ).fetchone()
-    if not prev:
-        return ""
-
-    prev_id, prev_round, prev_sha, prev_time = prev
-
-    rows = conn.execute(
-        """SELECT severity, title, file_path, outcome, code_snippet
-           FROM findings WHERE review_id=?
-           ORDER BY finding_index""",
-        (prev_id,),
-    ).fetchall()
-    if not rows:
-        return ""
-
-    fixed, persisted, uncertain = [], [], []
-    for severity, title, file_path, outcome, snippet in rows:
-        label = f"[{severity}] {title}"
-        if file_path:
-            label += f" (`{file_path}`)"
-        if outcome == "addressed":
-            fixed.append(label)
-        elif outcome == "indeterminate" or (outcome is None and snippet is None):
-            uncertain.append(label)
-        else:  # outcome IS NULL + 有 snippet → alive
-            persisted.append(label)
-
-    if not fixed and not persisted:
-        return ""
-
-    lines = ["\n---\n", f"## 与上轮审查（第 {prev_round} 轮）的对比\n"]
-
-    if fixed:
-        lines.append(f"已修复 {len(fixed)} 个问题：\n")
-        for item in fixed:
-            lines.append(f"- ~~{item}~~")
-        lines.append("")
-
-    if persisted:
-        lines.append(f"仍存在 {len(persisted)} 个问题：\n")
-        for item in persisted:
-            lines.append(f"- {item}")
-        lines.append("")
-
-    if uncertain:
-        lines.append(f"<details><summary>状态无法自动判定 ({len(uncertain)})</summary>\n")
-        for item in uncertain:
-            lines.append(f"- {item}")
-        lines.append("</details>\n")
-
-    if fixed:
-        total = len(rows)
-        lines.append(f"> 相比上轮审查，已修复 {len(fixed)}/{total} 个问题，进展不错！\n")
-
-    return "\n".join(lines)
-
-
 # 开发者回复关键词分类
 _REPLY_POSITIVE = re.compile(
     r"已修复|已改|已修改|fixed|done|好的|改了|修改了|已处理|已解决|感谢指出",
@@ -3167,19 +3099,6 @@ def _review_single_pr(
             _tracking_conn.close()
         except Exception:
             pass  # 追踪失败不影响主流程
-
-    # [对比] 构建与上轮审查的对比摘要
-    if len(review_text) >= MIN_REVIEW_CHARS and head_sha:
-        try:
-            _cmp_conn = _init_tracking_db()
-            comparison = _build_comparison_section(
-                _cmp_conn, repo.full_name, pr_number, head_sha)
-            _cmp_conn.close()
-            if comparison:
-                review_text = review_text + comparison
-                log(f"  [对比] 已附加与上轮审查的对比摘要")
-        except Exception:
-            pass
 
     # 发布到 PR 评论
     posted = False
