@@ -31,7 +31,7 @@ Slack：[#vibereview](https://claude-rfj1883.slack.com/archives/C0AHLUT5E0M)
 |TPS|每日检视意见数量|
 |Total Latency|Time To Merge|
 
-- LL是Hcomm仓最活跃的人类reviewer，在最新170个PR（50个已合并+120个open）的所有实质性检视意见（排除bot、AI review、PR作者自评、以及lgtm/approve/compile等纯命令）中，他贡献了全部人类检视意见的约25%（远超第二名），共提了54条实质性检视意见，日均14条，2月27日一天就提了35条，可能是集中review了一批PR。所有人类reviewer整体的中位响应时间为1.9天。
+- 某committer是hcomm仓最活跃的人类reviewer，他在最新170个PR（50个已合并+120个open）的所有实质性检视意见（排除bot、AI review、PR作者自评、以及lgtm/approve/compile等纯命令）中贡献了全部人类检视意见的约25%（远超第二名），日均14条检视意见，2月27日一天就提了35条（可能是集中review了一批PR）。另外，所有人类reviewer整体的中位响应时间为1.9天。
 - 作为对比：3月4日，AI审查了名单里的64个PR，提出193条检视意见。单PR从开始审查到评论发出的中位数6m14s，均值6m19s，57%的PR在5-10分钟内完成，25%在3-5分钟，最快1分钟（小PR），最慢15分钟（大PR），端到端时延（开发者push到收到评论）还要加上轮询间隔平均感知延迟\~30s（60s轮询周期）和Step1获取PR列表\~5s。所以典型场景是开发者push代码后约7分钟收到AI检视评论。冷启动时（积压多个PR）最长一轮耗时51分钟。
 
 ### 用户评价
@@ -265,7 +265,7 @@ log/                     # 检视产出，按仓库和维度组织：
 
 目标：发现真正的BUG，减少噪音
 
-<img src="./assets/meme_wtfs_per_minute.png" alt="meme_wtfs_per_minute" style="zoom: 67%;" />
+<img src="./assets/meme_wtfs_per_minute.png" alt="meme_wtfs_per_minute"  />
 
 ### 三 推广
 
@@ -312,7 +312,7 @@ log/                     # 检视产出，按仓库和维度组织：
 2. Microsoft Research Czerwonka et al. 发现变更越大，review中发现缺陷的概率反而越低
 4. 一个互联网meme：
 
-     <img src="./assets/meme_review_lines.jpg" style="zoom:50%;" />
+     <img src="./assets/meme_review_lines.jpg" style="zoom: 67%;" />
 
 这里就引入了一个有趣的矛盾：人工review小PR效果好（因为注意力集中），但AI review小PR成本不划算（因为固定开销摊不薄）。这其实说明AI和人的review特性不同，人的瓶颈是注意力，大PR会疲劳遗漏；AI的瓶颈是启动成本，小PR浪费算力。
 
@@ -340,7 +340,7 @@ log/                     # 检视产出，按仓库和维度组织：
 
 沟通约定：请通过issue以异步方式进行交流，拒绝微信办公。
 
-<img src="./assets/meme_dame.jpg" alt="img" style="zoom:33%;" />
+<img src="./assets/meme_dame.jpg" alt="img" style="zoom: 50%;" />
 
 ## 延伸阅读
 
