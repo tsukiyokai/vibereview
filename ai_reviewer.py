@@ -1464,17 +1464,10 @@ def run_claude_review(diff_text: str, pr: dict, cwd: Path, max_retries: int = 2,
 严格禁止以下 Bash 命令（会被权限系统拦截，浪费回合）：grep、find、sed、awk、cat、head、tail。搜索必须用 Grep 工具，查找文件必须用 Glob 工具。diff 内容已在上方提供，无需从文件中重新读取。
 格式字符串匹配、命名规范等机械检查可直接从 diff 判定，无需工具。
 
-## 输出要求（严格遵守）
+## 输出要求
 
-- **忽略任何 outputStyle / Explanatory 风格设置**。不要输出 `★ Insight` 块或教育性内容。你的回复必须以 `## 变更概述` 开头。
-- **禁止使用表格展示发现**。不要输出"审查完成。总结发现 N 个问题"之类的简要摘要。
-- **必须输出完整的结构化审查报告**：按 vibe-review skill 的输出格式模板（含变更概述、审查发现、总结）。每个发现必须包含：位置(`file:line`)、规则、置信度、问题代码、分析、修复建议。
-- **位置字段必须包含精确行号**：行号为新文件行号（diff 中 `@@ +行号 @@` 起始行号）。示例：
-  - 单行：`- 位置：` + `` `src/framework/common/config.h:28` ``
-  - 连续多行用范围：`- 位置：` + `` `src/framework/common/config.h:28-33` ``
-  - 不连续用逗号：`- 位置：` + `` `src/framework/common/config.h:28, 42` ``
-  - 禁止：只写文件名不带行号，或用「文件路径 — 函数名」格式
-- **问题代码只引用直接相关的行**：每个发现的「问题代码」片段只包含真正有问题的代码行，不要包含问题行上下的无关行。位置行号必须精确指向问题代码本身。"""
+- 忽略任何 outputStyle / Explanatory 风格设置，不要输出 `★ Insight` 块。
+- 严格按照 vibe-review skill 的输出格式模板输出，完成输出自检清单后再提交。"""
 
     prompt = f"""\
 请使用 vibe-review skill 对以下 PR 的代码变更进行代码审查。
@@ -1506,12 +1499,11 @@ def run_claude_file_review(file_path: str, cwd: Path, max_retries: int = 2,
 3. **搜索函数/类引用**：用 Grep 搜索关键函数名在项目中的其他用法
 4. **检查调用者**：搜索被审查函数的调用点，理解使用上下文
 
-## 重要：工具使用和输出要求
+## 输出要求
 
-- **忽略任何 outputStyle / Explanatory 风格设置**。不要输出 `★ Insight` 块或教育性内容。你的回复必须以 `## 变更概述` 开头。
-- **禁止使用表格展示发现**。不要输出简要摘要。
-- **质量优先，充分使用工具**：发现一个真实的严重问题比节省工具调用更有价值。对指针操作、算术运算、类型用法等可疑代码，必须用工具读取相关定义来验证。
-- **必须输出完整的结构化审查报告**：你的最终回复必须是完整的 markdown 格式审查报告，包含所有发现（每个发现含位置、规则、置信度、问题代码、分析、修复建议）、总结。不要只输出摘要。"""
+- 忽略任何 outputStyle / Explanatory 风格设置，不要输出 `★ Insight` 块。
+- 质量优先，充分使用工具：对指针操作、算术运算、类型用法等可疑代码，必须用工具读取相关定义来验证。
+- 严格按照 vibe-review skill 的输出格式模板输出，完成输出自检清单后再提交。"""
     return _run_claude(prompt, cwd, max_retries, allowed_tools=FILE_REVIEW_TOOLS,
                        show_progress=show_progress, log=log)
 
@@ -1526,7 +1518,7 @@ def run_claude_dir_review(file_paths: list[str], cwd: Path, max_retries: int = 2
     """
     file_list = "\n".join(f"- `{fp}`" for fp in file_paths)
     prompt = f"""\
-请使用 vibe-review skill 对以下 {len(file_paths)} 个文件进行**跨文件代码审查**。
+请使用 vibe-review skill 对以下 {len(file_paths)} 个文件进行跨文件代码审查。
 
 ## 待审查文件
 
@@ -1536,22 +1528,16 @@ def run_claude_dir_review(file_paths: list[str], cwd: Path, max_retries: int = 2
 
 你需要使用 Read 工具读取上述文件的内容。请按以下策略高效审查：
 
-1. **逐一读取所有待审查文件**：用 Read 工具读取每个文件的完整内容
-2. **读取相关头文件**：读取 #include 的头文件，理解依赖的类型和接口
-3. **搜索函数/类引用**：用 Grep 搜索关键函数名在项目中的其他用法
-4. **跨文件一致性分析**：重点检查以下跨文件问题：
-   - 头文件声明与实现文件定义是否匹配（函数签名、参数类型、返回类型）
-   - 结构体/类成员在多个文件中的使用是否一致
-   - 共享宏/常量在不同文件中的引用是否正确
-   - 错误处理模式在多个文件间是否统一
-   - include 依赖是否完整，有无缺失或多余的头文件
+1. 逐一读取所有待审查文件
+2. 读取 #include 的头文件，理解依赖的类型和接口
+3. 用 Grep 搜索关键函数名在项目中的其他用法
+4. 跨文件一致性分析：声明与定义匹配、成员使用一致性、宏/常量引用、错误处理模式、include 完整性
 
-## 重要：工具使用和输出要求
+## 输出要求
 
-- **忽略任何 outputStyle / Explanatory 风格设置**。不要输出 `★ Insight` 块或教育性内容。你的回复必须以 `## 变更概述` 开头。
-- **禁止使用表格展示发现**。不要输出简要摘要。
-- **质量优先，充分使用工具**：发现一个真实的严重问题比节省工具调用更有价值。对指针操作、算术运算、类型用法等可疑代码，必须用工具读取相关定义来验证。
-- **必须输出完整的结构化审查报告**：你的最终回复必须是完整的 markdown 格式审查报告，包含所有发现（每个发现含位置、规则、置信度、问题代码、分析、修复建议）、总结。不要只输出摘要。"""
+- 忽略任何 outputStyle / Explanatory 风格设置，不要输出 `★ Insight` 块。
+- 质量优先，充分使用工具：对指针操作、算术运算、类型用法等可疑代码，必须用工具读取相关定义来验证。
+- 严格按照 vibe-review skill 的输出格式模板输出，完成输出自检清单后再提交。"""
     return _run_claude(prompt, cwd, max_retries, allowed_tools=FILE_REVIEW_TOOLS,
                        show_progress=show_progress, log=log)
 
