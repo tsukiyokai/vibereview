@@ -3232,9 +3232,13 @@ def _review_single_pr(
                     posted = post_review_comment(repo, token, pr_number, pr_title, author, review_text,
                                                 head_sha=head_sha)
         else:
-            # 常规评论（现有逻辑）
-            posted = post_review_comment(repo, token, pr_number, pr_title, author, review_text,
-                                         head_sha=head_sha)
+            # 常规评论（与 inline 路径一致：先删旧评论写入 buf，再用 quiet 版本发布）
+            deleted = delete_old_review_comments(repo, token, pr_number)
+            if deleted > 0:
+                buf.write(f"  {_dim(f'已删除 {deleted} 条旧的 AI 审查评论')}\n")
+            posted = _post_review_comment_quiet(
+                repo, token, pr_number, pr_title, author, review_text, buf,
+                head_sha=head_sha)
 
         buf.write(f"  {_dim(f'发布耗时：{_fmt_secs(time.monotonic() - t0)}')}\n")
 
