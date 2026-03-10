@@ -1261,6 +1261,9 @@ def _clean_review_output(text: str) -> str | None:
     if match and match.start() > 0:
         text = text[match.start():]
     text = text.strip()
+    # "发现0个问题"的合法结果天然短于阈值，跳过长度校验
+    if re.search(r"共发现\s*0\s*个问题", text):
+        return text if text else None
     if len(text) < MIN_REVIEW_CHARS:
         return None
     return text
