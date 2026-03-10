@@ -5,7 +5,7 @@
 CANN代码量大（如HCCL+HCOMM），团队新人多，传统静态分析工具（如cppcheck、clang-tidy）能覆盖的问题类型有限。本工具通过Claude Code管道模式配合自定义的[vibe-review skill](https://github.com/tsukiyokai/vibe-review-skill)，在审查PR diff时同时按需读取上下文代码（不只看diff本身），并将检视意见发布为GitCode PR评论。
 
 维护者：@tsukiyokai <br>
-Slack：[#vibereview](https://claude-rfj1883.slack.com/archives/C0AHLUT5E0M)
+Slack:[#vibereview](https://claude-rfj1883.slack.com/archives/C0AHLUT5E0M)
 
 ## 效果
 
