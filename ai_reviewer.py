@@ -90,14 +90,15 @@ OWNER = os.environ.get("VIBE_DEFAULT_OWNER", "cann")
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPOS_ROOT = Path(os.environ["VIBE_REPOS_ROOT"]) if "VIBE_REPOS_ROOT" in os.environ else SCRIPT_DIR.parent.parent.parent
 # 单个 PR diff 最大字符数（防止超出 Claude 上下文窗口）
-MAX_DIFF_CHARS = 300000
+# 较小的值 → 更多批次 → 每批审查更聚焦，findings 质量更高
+MAX_DIFF_CHARS = int(os.environ.get("VIBE_MAX_DIFF_CHARS", 150000))
 # vibe-review skill 路径
 SKILL_MD_PATH = Path.home() / ".claude" / "skills" / "vibe-review" / "SKILL.md"
 # 单条 PR 评论最大字符数（GitCode 限制）
 MAX_COMMENT_CHARS = 60000
 # claude -p 最大 agentic 回合数（工具调用 + 文本输出）
 # 质量优先：充足的回合数确保 Claude 有空间进行深度分析和工具验证
-MAX_CLAUDE_TURNS = 40
+MAX_CLAUDE_TURNS = int(os.environ.get("VIBE_MAX_CLAUDE_TURNS", 60))
 # 美元兑人民币汇率（用于费用显示，近似值）
 USD_TO_CNY = 7.25
 # 模型价格表（$/MTok，来源：platform.claude.com/docs/en/about-claude/pricing）
@@ -1087,6 +1088,26 @@ def _get_module_key(filepath: str, depth: int = 2) -> str:
     return "/".join(dir_parts[:depth])
 
 
+def _module_priority(module_key: str) -> int:
+    """返回模块优先级权重，值越小优先级越高。
+
+    核心实现代码优先审查，测试文件排后面——即使后续批次因回合耗尽
+    而质量下降，最重要的代码已经得到充分审查。
+    """
+    low = module_key.lower()
+    # 测试目录 → 最低优先（排最后）
+    if low.startswith(("test/", "tests/", "st/")) or "/test/" in low or "/tests/" in low:
+        return 2
+    # src/ 下的实现文件 → 最高优先
+    if low.startswith("src/"):
+        return 0
+    # include/ 下的头文件 → 次高
+    if low.startswith("include/"):
+        return 1
+    # 其余 → 中等
+    return 1
+
+
 def _split_files_into_batches(files: list, max_chars: int = MAX_DIFF_CHARS) -> list[list]:
     """将文件按目录/模块分组，再按累积 diff 字符数切分为多批。
 
@@ -1095,6 +1116,7 @@ def _split_files_into_batches(files: list, max_chars: int = MAX_DIFF_CHARS) -> l
     2. 同一模块尽量在同一批
     3. 如果单个模块超过 max_chars，模块内再按文件切分
     4. 小模块合并到同一批直到接近上限
+    5. 核心实现文件优先于测试文件（即使后续批次质量下降，关键代码已审查）
     """
     # 按模块分组
     from collections import OrderedDict
@@ -1105,8 +1127,11 @@ def _split_files_into_batches(files: list, max_chars: int = MAX_DIFF_CHARS) -> l
         key = _get_module_key(fname)
         modules.setdefault(key, []).append((f, len(diff)))
 
-    # 按模块 diff 总量降序排列（大模块优先安排）
-    sorted_modules = sorted(modules.items(), key=lambda kv: sum(s for _, s in kv[1]), reverse=True)
+    # 按优先级升序（核心代码优先），同优先级内按 diff 总量降序
+    sorted_modules = sorted(
+        modules.items(),
+        key=lambda kv: (_module_priority(kv[0]), -sum(s for _, s in kv[1])),
+    )
 
     batches: list[list] = []
     current_batch: list = []
@@ -1279,9 +1304,11 @@ def _merge_batch_reviews(batch_results: list[tuple[str, "ReviewStats"]]) -> tupl
             return f"### #{global_idx} {m.group(1)}"
 
         renumbered = finding_header_re.sub(renumber, findings_text)
-        # 去掉可能的尾部统计段（--- 分隔符之后的内容）
-        tail_split = re.split(r"\n---\s*\n", renumbered, maxsplit=1)
-        merged_sections.append(tail_split[0])
+        # 去掉尾部统计/总结段（最后一个 --- 之后的内容）
+        # findings 之间也用 --- 分隔（SKILL.md 输出格式），必须从末尾切
+        parts = re.split(r"\n---\s*\n", renumbered)
+        # 取最后一个 --- 之前的所有内容（保留 findings 间的 ---）
+        merged_sections.append("\n---\n".join(parts[:-1]) if len(parts) > 1 else parts[0])
 
     # 拼接统计段
     severe = sum(text.count("[严重]") for text, _ in batch_results)
@@ -1293,7 +1320,7 @@ def _merge_batch_reviews(batch_results: list[tuple[str, "ReviewStats"]]) -> tupl
     merged_sections.append(
         f"> 本次审查分{len(batch_results)}批完成，"
         f"共发现 {total_findings} 个问题 "
-        f"(严重: {severe}, 一般: {normal}, 建议: {suggest})"
+        f"(严重 {severe} / 一般 {normal} / 建议 {suggest})"
     )
 
     return "\n".join(merged_sections), merged_stats
@@ -2003,9 +2030,12 @@ def delete_old_review_comments(repo: RepoConfig, token: str, pr_number: int) -> 
 
 
 def _extract_issue_summary(review_text: str) -> str:
-    """从审查正文中提取问题计数摘要（如 '严重 3 / 一般 7 / 建议 4'）。"""
-    match = re.search(r"(严重\s*\d+\s*/\s*一般\s*\d+\s*/\s*建议\s*\d+)", review_text)
-    return match.group(1) if match else ""
+    """从审查正文中提取问题计数摘要（如 '严重 3 / 一般 7 / 建议 4'）。
+
+    批量审查时文本中有多个摘要行（每批一个 + 末尾合计），取最后一个即合计。
+    """
+    matches = re.findall(r"(严重\s*\d+\s*/\s*一般\s*\d+\s*/\s*建议\s*\d+)", review_text)
+    return matches[-1] if matches else ""
 
 
 # ======================== 审查追踪 ========================
@@ -3421,7 +3451,7 @@ def _review_single_pr(
             normal = sum(1 for f in all_findings if f["severity"] == "一般")
             suggest = sum(1 for f in all_findings if f["severity"] == "建议")
             buf.write(f"  合并 {len(batch_results)} 批审查结果：共 {len(all_findings)} 个 findings "
-                       f"(严重: {severe}, 一般: {normal}, 建议: {suggest})\n")
+                       f"(严重 {severe} / 一般 {normal} / 建议 {suggest})\n")
             buf.write(f"  {_dim(f'总审查耗时：{_fmt_secs(review_secs)}')}\n")
             buf.write(f"  {_dim(f'合计 Token 消耗：{stats.fmt()}')}\n")
 
