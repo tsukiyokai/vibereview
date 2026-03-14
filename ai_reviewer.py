@@ -85,12 +85,12 @@ from urllib.request import Request, urlopen
 
 # ======================== 配置 ========================
 GITCODE_API_BASE = "https://api.gitcode.com/api/v5"
-OWNER = "cann"
+OWNER = os.environ.get("VIBE_DEFAULT_OWNER", "cann")
 # REPO 和 REPO_URL 改为运行时从 --repo 参数确定，见 RepoConfig
 SCRIPT_DIR = Path(__file__).resolve().parent
-REPOS_ROOT = SCRIPT_DIR.parent.parent.parent  # ~/repo/
+REPOS_ROOT = Path(os.environ["VIBE_REPOS_ROOT"]) if "VIBE_REPOS_ROOT" in os.environ else SCRIPT_DIR.parent.parent.parent
 # 单个 PR diff 最大字符数（防止超出 Claude 上下文窗口）
-MAX_DIFF_CHARS = 80000
+MAX_DIFF_CHARS = 300000
 # vibe-review skill 路径
 SKILL_MD_PATH = Path.home() / ".claude" / "skills" / "vibe-review" / "SKILL.md"
 # 单条 PR 评论最大字符数（GitCode 限制）
@@ -1072,6 +1072,231 @@ def is_cpp_file(filename: str) -> bool:
     """判断是否为 C/C++ 源文件或头文件。"""
     exts = {".h", ".hpp", ".hxx", ".c", ".cc", ".cpp", ".cxx"}
     return Path(filename).suffix.lower() in exts
+
+
+# ======================== 大 PR 分批审查 ========================
+def _get_module_key(filepath: str, depth: int = 2) -> str:
+    """取文件路径的前 depth 级目录作为模块标识。
+
+    例如 src/dpu/send/foo.cpp -> src/dpu/send
+         include/bar.h        -> include
+    """
+    parts = Path(filepath).parts
+    # 去掉文件名，取目录部分的前 depth 级
+    dir_parts = parts[:-1] if len(parts) > 1 else ("_root_",)
+    return "/".join(dir_parts[:depth])
+
+
+def _split_files_into_batches(files: list, max_chars: int = MAX_DIFF_CHARS) -> list[list]:
+    """将文件按目录/模块分组，再按累积 diff 字符数切分为多批。
+
+    策略：
+    1. 按前2级目录路径分组（同一模块的文件保持上下文关联）
+    2. 同一模块尽量在同一批
+    3. 如果单个模块超过 max_chars，模块内再按文件切分
+    4. 小模块合并到同一批直到接近上限
+    """
+    # 按模块分组
+    from collections import OrderedDict
+    modules: dict[str, list[tuple[dict, int]]] = OrderedDict()
+    for f in files:
+        fname = get_filename(f)
+        diff = get_file_diff(f) or ""
+        key = _get_module_key(fname)
+        modules.setdefault(key, []).append((f, len(diff)))
+
+    # 按模块 diff 总量降序排列（大模块优先安排）
+    sorted_modules = sorted(modules.items(), key=lambda kv: sum(s for _, s in kv[1]), reverse=True)
+
+    batches: list[list] = []
+    current_batch: list = []
+    current_chars = 0
+
+    for _module_key, file_sizes in sorted_modules:
+        module_total = sum(s for _, s in file_sizes)
+
+        if module_total <= max_chars and current_chars + module_total <= max_chars:
+            # 整个模块放入当前批
+            current_batch.extend(f for f, _ in file_sizes)
+            current_chars += module_total
+        elif module_total <= max_chars:
+            # 模块放不下当前批，开新批
+            if current_batch:
+                batches.append(current_batch)
+            current_batch = [f for f, _ in file_sizes]
+            current_chars = module_total
+        else:
+            # 模块本身超过限制，模块内按文件切分
+            if current_batch:
+                batches.append(current_batch)
+                current_batch = []
+                current_chars = 0
+            for f, size in file_sizes:
+                if current_chars + size > max_chars and current_batch:
+                    batches.append(current_batch)
+                    current_batch = []
+                    current_chars = 0
+                current_batch.append(f)
+                current_chars += size
+
+    if current_batch:
+        batches.append(current_batch)
+
+    return batches
+
+
+def format_diff_for_review_batch(
+    repo: "RepoConfig", pr: dict, all_files: list,
+    batch_files: list, batch_index: int, total_batches: int,
+) -> str:
+    """为分批审查生成单个批次的 diff 文本。
+
+    与 format_diff_for_review 结构相同，区别：
+    - 标题添加批次号
+    - 文件列表展示全部文件，当前批次用 [本批] 标注
+    - Diff 内容只包含 batch_files
+    """
+    pr_number = pr.get("number", "?")
+    pr_title = pr.get("title", "无标题")
+    author = pr.get("user", {}).get("login", "unknown")
+    head_ref = pr.get("head", {}).get("ref", "?")
+    base_ref = pr.get("base", {}).get("ref", "?")
+    body = (pr.get("body") or "").strip()
+
+    batch_label = f"(批次 {batch_index + 1}/{total_batches})"
+    lines = [
+        f"# PR #{pr_number}: {pr_title} {batch_label}",
+        f"",
+        f"- 作者：{author}",
+        f"- 分支：{head_ref} -> {base_ref}",
+        f"- 链接：{repo.url}/merge_requests/{pr_number}",
+    ]
+    if body:
+        lines.append(f"- 描述：{body[:500]}")
+    lines.append("")
+
+    # 构建当前批次文件名集合
+    batch_fnames = {get_filename(f) for f in batch_files}
+
+    # 文件列表概览（全部文件，标注当前批次）
+    cpp_files = [f for f in all_files if is_cpp_file(get_filename(f))]
+    non_cpp_files = [f for f in all_files if not is_cpp_file(get_filename(f))]
+
+    lines.append(f"## 变更文件 ({len(all_files)} 个, 其中 C/C++ 文件 {len(cpp_files)} 个)")
+    lines.append("")
+    for f in all_files:
+        fname = get_filename(f)
+        status = get_file_status(f)
+        adds = f.get("additions", 0)
+        dels = f.get("deletions", 0)
+        marker = " [本批]" if fname in batch_fnames else ""
+        cpp_marker = " *" if is_cpp_file(fname) and not marker else ""
+        lines.append(f"- [{status}] {fname} (+{adds}, -{dels}){marker}{cpp_marker}")
+    lines.append("")
+
+    lines.append(
+        f"> 注：本PR因变更规模较大，分{total_batches}批审查。"
+        f"当前为第{batch_index + 1}批，审查以下标注 [本批] 的文件。"
+        f"其他批次文件可通过 git show 读取完整内容。"
+    )
+    lines.append("")
+
+    # Diff 内容（只包含当前批次的文件）
+    lines.append("## Diff 内容")
+    lines.append("")
+
+    for f in batch_files:
+        fname = get_filename(f)
+        diff_text = get_file_diff(f)
+        if not diff_text:
+            continue
+        lines.append(f"### {fname}")
+        lines.append("```diff")
+        lines.append(diff_text)
+        lines.append("```")
+        lines.append("")
+
+    # 非 C++ 文件提示
+    if cpp_files and non_cpp_files:
+        skipped = ", ".join(get_filename(f) for f in non_cpp_files[:10])
+        lines.append(f"> 注：以下非 C/C++ 文件未纳入审查：{skipped}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def _merge_batch_reviews(batch_results: list[tuple[str, "ReviewStats"]]) -> tuple[str | None, "ReviewStats"]:
+    """合并多批审查结果：重编号 findings、累加统计数据。"""
+    if not batch_results:
+        return None, ReviewStats()
+
+    if len(batch_results) == 1:
+        return batch_results[0]
+
+    merged_stats = ReviewStats()
+    all_models = set()
+    all_denials = []
+
+    for _, stats in batch_results:
+        merged_stats.input_tokens += stats.input_tokens
+        merged_stats.output_tokens += stats.output_tokens
+        merged_stats.cache_read_tokens += stats.cache_read_tokens
+        merged_stats.cache_creation_tokens += stats.cache_creation_tokens
+        merged_stats.cost_usd += stats.cost_usd
+        merged_stats.calc_cost_usd += stats.calc_cost_usd
+        merged_stats.duration_ms += stats.duration_ms
+        merged_stats.num_turns += stats.num_turns
+        all_models.update(stats.model_names)
+        all_denials.extend(stats.permission_denials)
+
+    merged_stats.model_names = sorted(all_models)
+    merged_stats.permission_denials = all_denials
+
+    # 合并审查文本：提取 findings 并重编号
+    merged_sections = []
+    global_idx = 0
+    finding_header_re = re.compile(r"^### #\d+\s+(\[.+)", re.MULTILINE)
+
+    for batch_i, (text, _) in enumerate(batch_results):
+        # 提取概述段（findings 之前的内容）
+        first_finding = re.search(r"^### #\d+\s+\[", text, re.MULTILINE)
+        if batch_i == 0:
+            # 第一批：保留概述段
+            if first_finding:
+                merged_sections.append(text[:first_finding.start()])
+            else:
+                merged_sections.append(text)
+                continue
+
+        # 提取所有 findings 并重编号
+        if not first_finding:
+            continue
+        findings_text = text[first_finding.start():]
+
+        def renumber(m):
+            nonlocal global_idx
+            global_idx += 1
+            return f"### #{global_idx} {m.group(1)}"
+
+        renumbered = finding_header_re.sub(renumber, findings_text)
+        # 去掉可能的尾部统计段（--- 分隔符之后的内容）
+        tail_split = re.split(r"\n---\s*\n", renumbered, maxsplit=1)
+        merged_sections.append(tail_split[0])
+
+    # 拼接统计段
+    severe = sum(text.count("[严重]") for text, _ in batch_results)
+    normal = sum(text.count("[一般]") for text, _ in batch_results)
+    suggest = sum(text.count("[建议]") for text, _ in batch_results)
+    total_findings = severe + normal + suggest
+
+    merged_sections.append(f"\n---\n")
+    merged_sections.append(
+        f"> 本次审查分{len(batch_results)}批完成，"
+        f"共发现 {total_findings} 个问题 "
+        f"(严重: {severe}, 一般: {normal}, 建议: {suggest})"
+    )
+
+    return "\n".join(merged_sections), merged_stats
 
 
 # ======================== Diff Position 计算 ========================
@@ -3113,11 +3338,13 @@ def _review_single_pr(
     total_dels = sum(f.get("deletions", 0) for f in files)
     buf.write(f"  共 {len(files)} 个变更文件 (C/C++: {cpp_count}, {_green(f'+{total_adds}')}, {_red(f'-{total_dels}')})\n")
 
-    # 格式化 diff
-    diff_text = format_diff_for_review(repo, pr, files)
+    # 格式化 diff，判断是否需要分批
+    cpp_files_list = [f for f in files if is_cpp_file(get_filename(f))]
+    total_diff_chars = sum(len(get_file_diff(f) or "") for f in (cpp_files_list or files))
 
     if args.dry_run:
         # dry-run 模式：仅保存 diff 不审查
+        diff_text = format_diff_for_review(repo, pr, files)
         pr_diff_dir = output_dir / f"pr_{pr_number}"
         pr_diff_dir.mkdir(parents=True, exist_ok=True)
         diff_file = pr_diff_dir / f"{head_sha[:12]}_diff.md" if head_sha else pr_diff_dir / "diff.md"
@@ -3146,16 +3373,57 @@ def _review_single_pr(
         except Exception:
             pass  # 追踪失败不影响主流程
 
-    # 调用 Claude Code 审查（第一步：完整审查，prompt 不变，保证质量）
+    # 调用 Claude Code 审查
     use_inline = getattr(args, "inline", False)
-    buf.write(f"  {_dim(_now())} 调用 Claude Code (vibe-review skill) 进行代码审查\n")
-    if use_inline:
-        buf.write(f"  模式：行内评论 (--inline, 两步法)\n")
-    t0 = time.monotonic()
-    review_text, stats = run_claude_review(diff_text, pr, repo.path, show_progress=show_progress, log=log)
-    review_secs = time.monotonic() - t0
-    buf.write(f"  {_dim(f'审查耗时：{_fmt_secs(review_secs)}')}\n")
-    buf.write(f"  {_dim(f'Token 消耗：{stats.fmt()}')}\n")
+
+    if total_diff_chars <= MAX_DIFF_CHARS:
+        # 小PR：走现有逻辑，单次审查
+        diff_text = format_diff_for_review(repo, pr, files)
+        buf.write(f"  {_dim(_now())} 调用 Claude Code (vibe-review skill) 进行代码审查\n")
+        if use_inline:
+            buf.write(f"  模式：行内评论 (--inline, 两步法)\n")
+        t0 = time.monotonic()
+        review_text, stats = run_claude_review(diff_text, pr, repo.path, show_progress=show_progress, log=log)
+        review_secs = time.monotonic() - t0
+        buf.write(f"  {_dim(f'审查耗时：{_fmt_secs(review_secs)}')}\n")
+        buf.write(f"  {_dim(f'Token 消耗：{stats.fmt()}')}\n")
+    else:
+        # 大PR：按模块分批审查
+        review_files = cpp_files_list if cpp_files_list else files
+        batches = _split_files_into_batches(review_files)
+        buf.write(f"  diff 超长 ({total_diff_chars:,} 字符)，分 {len(batches)} 批审查\n")
+        batch_results = []
+        total_review_secs = 0
+        for i, batch in enumerate(batches):
+            batch_chars = sum(len(get_file_diff(f) or "") for f in batch)
+            batch_modules = sorted({_get_module_key(get_filename(f)) for f in batch})
+            modules_str = ", ".join(batch_modules[:5])
+            buf.write(f"  {_dim(_now())} [批次 {i+1}/{len(batches)}] "
+                       f"审查 {len(batch)} 个文件 ({batch_chars:,} 字符) [{modules_str}]\n")
+            diff_text = format_diff_for_review_batch(repo, pr, files, batch, i, len(batches))
+            t0 = time.monotonic()
+            text, st = run_claude_review(diff_text, pr, repo.path, show_progress=show_progress, log=log)
+            batch_secs = time.monotonic() - t0
+            total_review_secs += batch_secs
+            buf.write(f"  {_dim(f'  审查耗时：{_fmt_secs(batch_secs)}')}\n")
+            buf.write(f"  {_dim(f'  Token 消耗：{st.fmt()}')}\n")
+            if text:
+                batch_results.append((text, st))
+            else:
+                buf.write(f"  {_warn(f'  批次 {i+1} 审查无结果，跳过')}\n")
+
+        review_text, stats = _merge_batch_reviews(batch_results)
+        review_secs = total_review_secs
+        if review_text:
+            # 统计合并结果
+            all_findings = _extract_all_findings(review_text)
+            severe = sum(1 for f in all_findings if f["severity"] == "严重")
+            normal = sum(1 for f in all_findings if f["severity"] == "一般")
+            suggest = sum(1 for f in all_findings if f["severity"] == "建议")
+            buf.write(f"  合并 {len(batch_results)} 批审查结果：共 {len(all_findings)} 个 findings "
+                       f"(严重: {severe}, 一般: {normal}, 建议: {suggest})\n")
+            buf.write(f"  {_dim(f'总审查耗时：{_fmt_secs(review_secs)}')}\n")
+            buf.write(f"  {_dim(f'合计 Token 消耗：{stats.fmt()}')}\n")
 
     if review_text is None:
         buf.write(f"  {_warn(f'跳过 PR #{pr_number}（审查无结果）')}\n")
