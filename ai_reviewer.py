@@ -88,7 +88,7 @@ GITCODE_API_BASE = "https://api.gitcode.com/api/v5"
 OWNER = os.environ.get("VIBE_DEFAULT_OWNER", "cann")
 # REPO 和 REPO_URL 改为运行时从 --repo 参数确定，见 RepoConfig
 SCRIPT_DIR = Path(__file__).resolve().parent
-REPOS_ROOT = Path(os.environ["VIBE_REPOS_ROOT"]) if "VIBE_REPOS_ROOT" in os.environ else SCRIPT_DIR.parent.parent.parent
+REPOS_ROOT = Path(os.environ["VIBE_REPOS_ROOT"]) if "VIBE_REPOS_ROOT" in os.environ else SCRIPT_DIR.parent.parent.parent.parent
 # 单个 PR diff 最大字符数（防止超出 Claude 上下文窗口）
 # 较小的值 → 更多批次 → 每批审查更聚焦，findings 质量更高
 MAX_DIFF_CHARS = int(os.environ.get("VIBE_MAX_DIFF_CHARS", 150000))
